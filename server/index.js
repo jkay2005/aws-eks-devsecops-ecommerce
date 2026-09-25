@@ -254,3 +254,12 @@ app.use((err, req, res, next) => {
 app.listen(PORT, () => {
   console.log(`Server is running: http://localhost:${PORT}`);
 });
+
+app.get("/debug/session", (req, res) => {
+  req.session.debug = "session-test";
+
+  res.status(200).json({
+    sessionId: req.sessionID,
+    message: "Session created",
+  });
+});

@@ -1,15 +1,19 @@
-import dotenv from 'dotenv';
-import pg from 'pg';
+import dotenv from "dotenv";
+import pg from "pg";
 
 dotenv.config();
 
 const { Pool } = pg;
 
+const useSsl = process.env.DB_SSL === "true";
+
 export const pool = new Pool({
   connectionString: process.env.DB_URL,
-  ssl: {
-    rejectUnauthorized: false
-  }
+  ssl: useSsl
+    ? {
+        rejectUnauthorized: false,
+      }
+    : false,
 });
 
-console.log('database connected')
+console.log(`Database pool configured. SSL: ${useSsl}`);
