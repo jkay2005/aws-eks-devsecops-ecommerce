@@ -26,9 +26,28 @@ import { orderRouter } from "./routes/order.route.js";
 dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
-const stripe = stripeLib(process.env.STRIPE_SECRET); // Initialize Stripe with your secret key
+
+const STRIPE_SECRET = process.env.STRIPE_SECRET?.trim();
+
+const stripe = STRIPE_SECRET
+  ? stripeLib(STRIPE_SECRET)
+  : null;
+
+if (!stripe) {
+  console.warn(
+    "[WARN] STRIPE_SECRET is not configured. Payment functionality is disabled."
+  );
+}
+
 const FRONT_DOMAIN =
   process.env.FRONT_DOMAIN || "https://studio-chairs.vercel.app";
+
+const GITHUB_CLIENT = process.env.GITHUB_CLIENT?.trim();
+const GITHUB_SECRET = process.env.GITHUB_SECRET?.trim();
+
+const isGitHubOAuthConfigured = Boolean(
+  GITHUB_CLIENT && GITHUB_SECRET
+);
 
 // Dynamically set the origin based on the environment
 const corsOptions = {
@@ -78,33 +97,38 @@ app.use(bodyParser.urlencoded({ extended: true }));
 
 // GitHub Authentication 2.0 Strategy
 // Config GitHubStrategy
-passport.use(
-  new GitHubStrategy(
-    {
-      clientID: process.env.GITHUB_CLIENT,
-      clientSecret: process.env.GITHUB_SECRET,
-      callbackURL:
-        process.env.NODE_ENV === "production"
-          ? "https://studio-chairs.vercel.app/auth/github/callback"
-          : "http://localhost:3000/auth/github/callback", // Changed to relative URL that points to our backend
-    },
-    async (accessToken, refreshToken, profile, done) => {
-      try {
-        // Check if user already exists
-        const email = profile.emails[0].value;
-        let user = await findUserByEmail(email);
+if (isGitHubOAuthConfigured) {
+  passport.use(
+    new GitHubStrategy(
+      {
+        clientID: GITHUB_CLIENT,
+        clientSecret: GITHUB_SECRET,
+        callbackURL:
+          process.env.NODE_ENV === "production"
+            ? "https://studio-chairs.vercel.app/auth/github/callback"
+            : "http://localhost:3000/auth/github/callback",
+      },
+      async (accessToken, refreshToken, profile, done) => {
+        try {
+          const email = profile.emails[0].value;
+          let user = await findUserByEmail(email);
 
-        if (!user) {
-          // Insert new GitHub user without password and salt
-          user = await insertUser(profile.displayName, email);
+          if (!user) {
+            user = await insertUser(profile.displayName, email);
+          }
+
+          done(null, user);
+        } catch (error) {
+          done(error);
         }
-        done(null, user);
-      } catch (error) {
-        done(error);
       }
-    }
-  )
-);
+    )
+  );
+} else {
+  console.warn(
+    "[WARN] GitHub OAuth credentials are not configured. GitHub login is disabled."
+  );
+}
 
 // Allow referrer info for HTTPS→HTTPS requests
 app.use((req, res, next) => {
@@ -121,22 +145,43 @@ app.get("/", (req, res) => {
 });
 
 // GitHub endpoints
-app.get(
-  "/auth/github",
-  passport.authenticate("github", { scope: ["user:email"] })
-);
+if (isGitHubOAuthConfigured) {
+  app.get(
+    "/auth/github",
+    passport.authenticate("github", { scope: ["user:email"] })
+  );
 
-app.get(
-  "/auth/github/callback",
-  passport.authenticate("github", { failureRedirect: `${FRONT_DOMAIN}/login` }),
-  (req, res) => {
-    // Successful authentication, redirect to frontend home page
-    res.redirect(`${FRONT_DOMAIN}/?status=success`);
-  }
-);
+  app.get(
+    "/auth/github/callback",
+    passport.authenticate("github", {
+      failureRedirect: `${FRONT_DOMAIN}/login`,
+    }),
+    (req, res) => {
+      res.redirect(`${FRONT_DOMAIN}/?status=success`);
+    }
+  );
+} else {
+  app.get("/auth/github", (req, res) => {
+    res.status(503).json({
+      error: "GitHub OAuth is not configured",
+    });
+  });
+
+  app.get("/auth/github/callback", (req, res) => {
+    res.status(503).json({
+      error: "GitHub OAuth is not configured",
+    });
+  });
+}
 
 // Stripe endpoint
 app.post("/create-checkout-session", async (req, res) => {
+   if (!stripe) {
+    return res.status(503).json({
+      error: "Payment service is not configured",
+    });
+  }
+
   try {
     const { cartItems } = req.body;
 
