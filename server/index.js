@@ -1,15 +1,15 @@
 import dotenv from "dotenv";
 import express from "express";
 import cors from "cors";
-import bodyParser from "body-parser";
+// import bodyParser from "body-parser";
 import passport from "passport";
 import { Strategy as GitHubStrategy } from "passport-github2";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import { pool } from "./models/index.js";
 import stripeLib from "stripe";
-import path from "path";
-import { fileURLToPath } from "url";
+// import path from "path";
+// import { fileURLToPath } from "url";
 
 // Controllers
 import { isAuthenticated } from "./controllers/auth.js";
@@ -24,8 +24,32 @@ import { orderRouter } from "./routes/order.route.js";
 
 // Express Config
 dotenv.config();
+
+for (const name of ["DB_URL", "SESSION_SECRET", "FRONT_DOMAIN"]) {
+  if (!process.env[name]?.trim()) {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+}
+
 const app = express();
-const PORT = process.env.PORT || 5000;
+
+const PORT = Number(process.env.PORT || 3000);
+
+if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) {
+  throw new Error("PORT must be an integer between 1 and 65535");
+}
+
+const cookieSecureValue =
+  process.env.COOKIE_SECURE ??
+  (process.env.NODE_ENV === "production" ? "true" : "false");
+
+if (!["true", "false"].includes(cookieSecureValue)) {
+  throw new Error("COOKIE_SECURE must be true or false");
+}
+
+const COOKIE_SECURE = cookieSecureValue === "true";
+
+let shuttingDown = false;
 
 const STRIPE_SECRET = process.env.STRIPE_SECRET?.trim();
 
@@ -39,8 +63,7 @@ if (!stripe) {
   );
 }
 
-const FRONT_DOMAIN =
-  process.env.FRONT_DOMAIN || "https://studio-chairs.vercel.app";
+const FRONT_DOMAIN = process.env.FRONT_DOMAIN.trim();
 
 const GITHUB_CLIENT = process.env.GITHUB_CLIENT?.trim();
 const GITHUB_SECRET = process.env.GITHUB_SECRET?.trim();
@@ -51,10 +74,7 @@ const isGitHubOAuthConfigured = Boolean(
 
 // Dynamically set the origin based on the environment
 const corsOptions = {
-  origin:
-    process.env.NODE_ENV === "production"
-      ? "https://studio-chairs.vercel.app"
-      : "http://localhost:3001",
+  origin: FRONT_DOMAIN,
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
@@ -67,6 +87,35 @@ app.use(cors(corsOptions));
 
 // For preflight requests
 app.options("*", cors(corsOptions));
+
+app.get("/health/live", (_req, res) => {
+  res.status(200).json({
+    status: "alive",
+  });
+});
+
+app.get("/health/ready", async (_req, res) => {
+  if (shuttingDown) {
+    return res.status(503).json({
+      status: "not_ready",
+    });
+  }
+
+  try {
+    await pool.query({
+      text: "SELECT 1",
+      query_timeout: 2000,
+    });
+
+    return res.status(200).json({
+      status: "ready",
+    });
+  } catch {
+    return res.status(503).json({
+      status: "not_ready",
+    });
+  }
+});
 
 // Store sessions in PostgreSQL
 const pgSession = connectPgSimple(session);
@@ -83,7 +132,7 @@ app.use(
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production", // Use HTTPS in production
+      secure: COOKIE_SECURE, // Use HTTPS in production
       maxAge: 1000 * 60 * 60 * 24 * 7, // 1 week
       sameSite: "lax",
     },
@@ -92,8 +141,8 @@ app.use(
 
 app.use(passport.initialize());
 app.use(passport.session());
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // GitHub Authentication 2.0 Strategy
 // Config GitHubStrategy
@@ -226,40 +275,78 @@ app.use("/api/products", productRouter);
 app.use("/api/cart", isAuthenticated, cartRouter);
 app.use("/api/orders", isAuthenticated, orderRouter);
 
-const isProduction = process.env.NODE_ENV === "production";
+// const isProduction = process.env.NODE_ENV === "production";
 
-if (isProduction) {
-  const __filename = fileURLToPath(import.meta.url);
-  const __dirname = path.dirname(__filename);
+// if (isProduction) {
+//   const __filename = fileURLToPath(import.meta.url);
+//   const __dirname = path.dirname(__filename);
 
-  // Serve static files from React app
-  app.use(express.static(path.join(__dirname, "../client/build")));
+//   // Serve static files from React app
+//   app.use(express.static(path.join(__dirname, "../client/build")));
 
-  // Handle React routing, return all requests to React app
-  app.get("/*", (req, res) => {
-    res.sendFile(path.join(__dirname, "../client/build", "index.html"));
+//   // Handle React routing, return all requests to React app
+//   app.get("/*", (req, res) => {
+//     res.sendFile(path.join(__dirname, "../client/build", "index.html"));
+//   });
+// }
+
+// Error handling
+// app.use((err, req, res, next) => {
+//   if (res.headersSent) {
+//     return next(err);
+//   }
+//   console.error(err.stack);
+//   res.status(500).send("Something went wrong. We're working on fixing it.");
+// });
+
+// // Listening to app
+// app.listen(PORT, () => {
+//   console.log(`Server is running: http://localhost:${PORT}`);
+// });
+
+// app.get("/debug/session", (req, res) => {
+//   req.session.debug = "session-test";
+
+//   res.status(200).json({
+//     sessionId: req.sessionID,
+//     message: "Session created",
+//   });
+// });
+
+const httpServer = app.listen(PORT, "0.0.0.0", () => {
+  console.log(`[http] listening on port ${PORT}`);
+});
+
+function shutdown(signal) {
+  if (shuttingDown) return;
+
+  shuttingDown = true;
+
+  console.log(`[shutdown] received ${signal}`);
+
+  const deadline = setTimeout(() => {
+    console.error("[shutdown] timeout");
+    process.exit(1);
+  }, 25000);
+
+  deadline.unref();
+
+  httpServer.close(async (error) => {
+    try {
+      if (error) throw error;
+
+      await pool.end();
+
+      clearTimeout(deadline);
+
+      console.log("[shutdown] completed");
+      process.exit(0);
+    } catch {
+      console.error("[shutdown] failed");
+      process.exit(1);
+    }
   });
 }
 
-// Error handling
-app.use((err, req, res, next) => {
-  if (res.headersSent) {
-    return next(err);
-  }
-  console.error(err.stack);
-  res.status(500).send("Something went wrong. We're working on fixing it.");
-});
-
-// Listening to app
-app.listen(PORT, () => {
-  console.log(`Server is running: http://localhost:${PORT}`);
-});
-
-app.get("/debug/session", (req, res) => {
-  req.session.debug = "session-test";
-
-  res.status(200).json({
-    sessionId: req.sessionID,
-    message: "Session created",
-  });
-});
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));
