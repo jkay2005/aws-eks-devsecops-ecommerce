@@ -290,16 +290,16 @@ app.use("/api/orders", isAuthenticated, orderRouter);
 //   });
 // }
 
-// Error handling
-// app.use((err, req, res, next) => {
-//   if (res.headersSent) {
-//     return next(err);
-//   }
-//   console.error(err.stack);
-//   res.status(500).send("Something went wrong. We're working on fixing it.");
-// });
+//Error handling
+app.use((err, req, res, next) => {
+  if (res.headersSent) {
+    return next(err);
+  }
+  console.error(err.stack);
+  res.status(500).send("Something went wrong. We're working on fixing it.");
+});
 
-// // Listening to app
+// Listening to app
 // app.listen(PORT, () => {
 //   console.log(`Server is running: http://localhost:${PORT}`);
 // });
