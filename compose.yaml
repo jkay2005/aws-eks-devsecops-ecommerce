@@ -1,0 +1,77 @@
+name: ecommerce-phase1
+
+services:
+  db:
+    image: postgres@sha256:1a6ab3f5345eb6dbe04a1349529caabdb0ab09293a09590fad07b2246bfa4b54
+
+    environment:
+      POSTGRES_USER: ecommerce
+      POSTGRES_DB: ecommerce
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}"
+
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./server/models/tables.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -h 127.0.0.1 -U $${POSTGRES_USER} -d $${POSTGRES_DB}
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
+
+  backend:
+    image: "ecommerce-backend:${IMAGE_TAG:-phase1-local}"
+
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      DB_URL: "postgresql://ecommerce:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/ecommerce"
+      DB_SSL: "false"
+      SESSION_SECRET: "${SESSION_SECRET:?Set SESSION_SECRET in .env}"
+      FRONT_DOMAIN: "${FRONT_DOMAIN:-http://localhost:3001}"
+      COOKIE_SECURE: "${COOKIE_SECURE:-false}"
+
+    ports:
+      - "127.0.0.1:3000:3000"
+
+    depends_on:
+      db:
+        condition: service_healthy
+
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          fetch('http://127.0.0.1:3000/health/ready',
+          { signal: AbortSignal.timeout(4000) })
+          .then(r => process.exit(r.ok ? 0 : 1))
+          .catch(() => process.exit(1))
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+    read_only: true
+
+    tmpfs:
+      - /tmp
+
+    cap_drop:
+      - ALL
+
+    security_opt:
+      - no-new-privileges:true
+
+    stop_grace_period: 30s
+
+volumes:
+  pgdata:
