@@ -300,9 +300,9 @@ app.use((err, req, res, next) => {
 });
 
 // Listening to app
-app.listen(PORT, () => {
-  console.log(`Server is running: http://localhost:${PORT}`);
-});
+// app.listen(PORT, () => {
+//   console.log(`Server is running: http://localhost:${PORT}`);
+// });
 
 // app.get("/debug/session", (req, res) => {
 //   req.session.debug = "session-test";
