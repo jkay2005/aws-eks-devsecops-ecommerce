@@ -153,3 +153,36 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 ---
 
 Happy coding!
+
+## Run the local container stack
+
+Requirements: Git and Docker Desktop using Linux containers.
+
+1. Copy `.env.example` to `.env`.
+2. Replace `POSTGRES_PASSWORD` and `SESSION_SECRET` with separate random hex values.
+3. Run:
+
+```powershell
+docker compose up -d --build --wait --wait-timeout 120
+```
+
+Verify:
+
+```powershell
+curl.exe -i http://localhost:3000/health/ready
+curl.exe -i http://localhost:3000/api/products
+```
+
+View logs:
+
+```powershell
+docker compose logs --tail 100 backend
+```
+
+Stop the stack while retaining database data:
+
+```powershell
+docker compose down
+```
+
+See `docs/phase-1.md` for verification results.
