@@ -10,23 +10,23 @@ The backend is accessible at http://localhost:3000.
 
 ## Image references
 
-Node base image: node@sha256: 43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c
+Node base image: node@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c
 PostgreSQL image: postgres@sha256:1a6ab3f5345eb6dbe04a1349529caabdb0ab09293a09590fad07b2246bfa4b54
-Backend image tag: phase1-local
+Backend image tag: ecommerce-backend:sha-4ef943d52f13
 
 ## Verification results
 
-| Check                       | Expected                      | Actual |
-| --------------------------- | ----------------------------- | ------ |
-| Backend and database health | Healthy                       |        |
-| Products API                | HTTP 200                      |        |
-| Seed data                   | 5 categories, 15 products     |        |
-| Backend user                | Non-root                      |        |
-| Write to /app               | Rejected                      |        |
-| DB stopped                  | Live 200, ready 503           |        |
-| DB restored                 | Ready and products return 200 |        |
-| SIGTERM                     | Clean shutdown, exit 0        |        |
-| Container recreation        | Marker data retained          |        |
+| Check                       | Expected                      | Actual                                                          |
+| --------------------------- | ----------------------------- | --------------------------------------------------------------- |
+| Backend and database health | Healthy                       | PASS — both services healthy                                    |
+| Products API                | HTTP 200                      | PASS — HTTP 200, 15 products returned                           |
+| Seed data                   | 5 categories, 15 products     | PASS — 5 categories, 15 products                                |
+| Backend user                | Non-root                      | PASS — uid=1000(node)                                           |
+| Write to /app               | Rejected                      | PASS — Read-only file system                                    |
+| DB stopped                  | Live 200, ready 503           | PASS — live 200, ready 503; backend remains running             |
+| DB restored                 | Ready and products return 200 | PASS — ready and products return 200 without restarting backend |
+| SIGTERM                     | Clean shutdown, exit 0        | PASS — shutdown completed, exit code 0                          |
+| Container recreation        | Marker data retained          | PASS — marker row retained after down/up                        |
 
 ## Known limitations
 
@@ -43,6 +43,6 @@ Database migrations and dependency remediation remain follow-up work.
 
 ```text
 CONTAINER                    REPOSITORY          TAG                 PLATFORM            IMAGE ID            SIZE                CREATED
-ecommerce-phase1-backend-1   ecommerce-backend   phase1-local        linux/amd64         d12fcac157bc        82.7MB              55 minutes ago
+ecommerce-phase1-backend-1   ecommerce-backend   sha-4ef943d52f13    linux/amd64         1c08ee7013a3        82.7MB              2 hours ago
 ecommerce-phase1-db-1        postgres            <none>              linux/amd64         1a6ab3f5345e        160MB               9 days ago
 ```
